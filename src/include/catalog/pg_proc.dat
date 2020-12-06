@@ -5929,9 +5929,9 @@
 { oid => '1065', descr => 'view two-phase transactions',
   proname => 'pg_prepared_xact', prorows => '1000', proretset => 't',
   provolatile => 'v', prorettype => 'record', proargtypes => '',
-  proallargtypes => '{xid,text,timestamptz,oid,oid}',
-  proargmodes => '{o,o,o,o,o}',
-  proargnames => '{transaction,gid,prepared,ownerid,dbid}',
+  proallargtypes => '{xid,text,timestamptz,oid,oid,text}',
+  proargmodes => '{o,o,o,o,o,o}',
+  proargnames => '{transaction,gid,prepared,ownerid,dbid,state3pc}',
   prosrc => 'pg_prepared_xact' },
 { oid => '3819', descr => 'view members of a multixactid',
   proname => 'pg_get_multixact_members', prorows => '1000', proretset => 't',
@@ -10937,4 +10937,11 @@
   proname => 'is_normalized', prorettype => 'bool', proargtypes => 'text text',
   prosrc => 'unicode_is_normalized' },
 
+#
+# multimaster support functions
+#
+{ oid => '6040', descr => "alter state of prepared transaction (used for 3pc)",
+ proname => 'pg_precommit_prepared', provolatile => 's',
+ prorettype => 'void', proargtypes => 'text text',
+ prosrc => 'pg_precommit_prepared' },
 ]

@@ -708,7 +708,7 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	 * transaction's contents, since the various caches need to always be
 	 * consistent.
 	 */
-	if (parsed->nmsgs > 0)
+	if (parsed->nmsgs > 0 && !parsed->state_3pc_change)
 	{
 		ReorderBufferAddInvalidations(ctx->reorder, xid, buf->origptr,
 									  parsed->nmsgs, parsed->msgs);
@@ -729,6 +729,24 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		return;
 	}
 
+	/* Shorthack for PRECOMMIT */
+	if (parsed->state_3pc_change)
+	{
+		ReorderBufferTXN txn;
+		txn.xid = xid;
+		txn.first_lsn = buf->origptr;
+		txn.final_lsn = buf->origptr;
+		txn.end_lsn = buf->endptr;
+		txn.commit_time = commit_time;
+		txn.origin_id = origin_id;
+		txn.origin_lsn = origin_lsn;
+		strcpy(txn.gid, parsed->twophase_gid);
+		txn.state_3pc_change = true;
+		strcpy(txn.state_3pc, parsed->state_3pc);
+		ctx->reorder->prepare(ctx->reorder, &txn, buf->origptr);
+		return;
+	}
+
 	/* tell the reorderbuffer about the surviving subtransactions */
 	for (i = 0; i < parsed->nsubxacts; i++)
 	{
@@ -738,7 +756,8 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 
 	/* replay actions of all transaction + subtransactions in order */
 	ReorderBufferPrepare(ctx->reorder, xid, buf->origptr, buf->endptr,
-						 commit_time, origin_id, origin_lsn, parsed->twophase_gid);
+						commit_time, origin_id, origin_lsn,
+						parsed->twophase_gid, parsed->state_3pc);
 }
 
 /*

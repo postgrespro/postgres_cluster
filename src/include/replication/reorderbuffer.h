@@ -200,6 +200,10 @@ typedef struct ReorderBufferTXN
 	/* In case of 2PC we need to pass GID to output plugin */
 	char		gid[GIDSIZE];
 
+	/* 3pc support */
+	bool		state_3pc_change;
+	char		state_3pc[MAX_3PC_STATE_SIZE];
+
 	/*
 	 * LSN of the first data carrying, WAL record with knowledge about this
 	 * xid. This is allowed to *not* be first record adorned with this xid, if
@@ -513,7 +517,8 @@ void		ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					TimestampTz commit_time,
 					RepOriginId origin_id, XLogRecPtr origin_lsn,
-					char *gid);
+					char *gid, char *state_3pc);
+
 ReorderBufferTXN *ReorderBufferGetOldestTXN(ReorderBuffer *);
 TransactionId ReorderBufferGetOldestXmin(ReorderBuffer *rb);
 

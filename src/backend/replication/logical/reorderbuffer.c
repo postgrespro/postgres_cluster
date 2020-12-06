@@ -1991,7 +1991,7 @@ ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					TimestampTz commit_time,
 					RepOriginId origin_id, XLogRecPtr origin_lsn,
-					char *gid)
+					char *gid, char *state_3pc)
 {
 	ReorderBufferTXN *txn;
 
@@ -2010,6 +2010,8 @@ ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 		txn.origin_id = origin_id;
 		txn.origin_lsn = origin_lsn;
 		strcpy(txn.gid, gid);
+		txn.state_3pc_change = false; /* this is full-blown PREPARE */
+		strcpy(txn.state_3pc, state_3pc);
 		rb->begin(rb, &txn);
 		rb->prepare(rb, &txn, commit_lsn);
 		return;
@@ -2017,6 +2019,8 @@ ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 
 	txn->txn_flags |= RBTXN_PREPARE;
 	strcpy(txn->gid, gid);
+	txn->state_3pc_change = false; /* this is full-blown PREPARE */
+	strcpy(txn->state_3pc, state_3pc);
 
 	ReorderBufferCommitInternal(txn, rb, xid, commit_lsn, end_lsn,
 								commit_time, origin_id, origin_lsn);

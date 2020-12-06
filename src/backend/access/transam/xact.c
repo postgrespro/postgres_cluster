@@ -258,6 +258,7 @@ static TimestampTz xactStopTimestamp;
  * global to a whole transaction, so we don't keep it in the state stack.
  */
 static char *prepareGID;
+static char *prepare_state_3pc;
 
 /*
  * Some commands want to force synchronous commit.
@@ -2432,8 +2433,9 @@ PrepareTransaction(void)
 	 * GID is invalid or already in use.
 	 */
 	gxact = MarkAsPreparing(xid, prepareGID, prepared_at,
-							GetUserId(), MyDatabaseId);
+							GetUserId(), MyDatabaseId, prepare_state_3pc);
 	prepareGID = NULL;
+	prepare_state_3pc = NULL;
 
 	/*
 	 * Collect data for the 2PC state file.  Note that in general, no actual
@@ -3670,6 +3672,12 @@ BeginTransactionBlock(void)
 	}
 }
 
+bool
+PrepareTransactionBlock(const char *gid)
+{
+	return PrepareTransactionBlockWithState3PC(gid, NULL);
+}
+
 /*
  *	PrepareTransactionBlock
  *		This executes a PREPARE command.
@@ -3681,9 +3689,11 @@ BeginTransactionBlock(void)
  * The real work will be done in the upcoming PrepareTransaction().
  * We do it this way because it's not convenient to change memory context,
  * resource owner, etc while executing inside a Portal.
+ *
+ * state_3pc is MM support.
  */
 bool
-PrepareTransactionBlock(const char *gid)
+PrepareTransactionBlockWithState3PC(const char *gid, const char *state_3pc)
 {
 	TransactionState s;
 	bool		result;
@@ -3703,6 +3713,10 @@ PrepareTransactionBlock(const char *gid)
 		{
 			/* Save GID where PrepareTransaction can find it again */
 			prepareGID = MemoryContextStrdup(TopTransactionContext, gid);
+			if (state_3pc != NULL)
+				prepare_state_3pc = MemoryContextStrdup(TopTransactionContext, state_3pc);
+			else
+				prepare_state_3pc = NULL;
 
 			s->blockState = TBLOCK_PREPARE;
 		}

@@ -168,8 +168,10 @@ typedef struct GlobalTransactionData
 	BackendId	locking_backend;	/* backend currently working on the xact */
 	bool		valid;			/* true if PGPROC entry is in proc array */
 	bool		ondisk;			/* true if prepare state file is on disk */
+	XLogRecPtr	ondisk_start_lsn; /* in memory bookkeeping for checkpointer */
 	bool		inredo;			/* true if entry was added via xlog_redo */
 	char		gid[GIDSIZE];	/* The GID assigned to the prepared xact */
+	char		state_3pc[MAX_3PC_STATE_SIZE]; /* 3PC transaction state  */
 }			GlobalTransactionData;
 
 /*
@@ -370,7 +372,8 @@ PostPrepare_Twophase(void)
  */
 GlobalTransaction
 MarkAsPreparing(TransactionId xid, const char *gid,
-				TimestampTz prepared_at, Oid owner, Oid databaseid)
+				TimestampTz prepared_at, Oid owner, Oid databaseid,
+				const char *state_3pc)
 {
 	GlobalTransaction gxact;
 	int			i;
@@ -380,6 +383,12 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("transaction identifier \"%s\" is too long",
 						gid)));
+
+	if (state_3pc != NULL && strlen(state_3pc) >= MAX_3PC_STATE_SIZE)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("state_3pc \"%s\" is too long",
+						state_3pc)));
 
 	/* fail immediately if feature is disabled */
 	if (max_prepared_xacts == 0)
@@ -421,8 +430,14 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	TwoPhaseState->freeGXacts = gxact->next;
 
 	MarkAsPreparingGuts(gxact, xid, gid, prepared_at, owner, databaseid);
+	/* we do not distinguish between empty and NULL state_3pc */
+	if (state_3pc != NULL)
+		strcpy(gxact->state_3pc, state_3pc);
+	else
+		*gxact->state_3pc = '\0';
 
 	gxact->ondisk = false;
+	gxact->ondisk_start_lsn = InvalidXLogRecPtr;
 
 	/* And insert it into the active array */
 	Assert(TwoPhaseState->numPrepXacts < max_prepared_xacts);
@@ -735,7 +750,7 @@ pg_prepared_xact(PG_FUNCTION_ARGS)
 
 		/* build tupdesc for result tuples */
 		/* this had better match pg_prepared_xacts view in system_views.sql */
-		tupdesc = CreateTemplateTupleDesc(5);
+		tupdesc = CreateTemplateTupleDesc(6);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "transaction",
 						   XIDOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 2, "gid",
@@ -746,6 +761,8 @@ pg_prepared_xact(PG_FUNCTION_ARGS)
 						   OIDOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 5, "dbid",
 						   OIDOID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 6, "state3pc",
+						   TEXTOID, -1, 0);
 
 		funcctx->tuple_desc = BlessTupleDesc(tupdesc);
 
@@ -770,8 +787,8 @@ pg_prepared_xact(PG_FUNCTION_ARGS)
 		GlobalTransaction gxact = &status->array[status->currIdx++];
 		PGPROC	   *proc = &ProcGlobal->allProcs[gxact->pgprocno];
 		PGXACT	   *pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
-		Datum		values[5];
-		bool		nulls[5];
+		Datum		values[6];
+		bool		nulls[6];
 		HeapTuple	tuple;
 		Datum		result;
 
@@ -789,6 +806,7 @@ pg_prepared_xact(PG_FUNCTION_ARGS)
 		values[2] = TimestampTzGetDatum(gxact->prepared_at);
 		values[3] = ObjectIdGetDatum(gxact->owner);
 		values[4] = ObjectIdGetDatum(proc->databaseId);
+		values[5] = CStringGetTextDatum(gxact->state_3pc);
 
 		tuple = heap_form_tuple(funcctx->tuple_desc, values, nulls);
 		result = HeapTupleGetDatum(tuple);
@@ -909,7 +927,7 @@ TwoPhaseGetDummyProc(TransactionId xid, bool lock_held)
 /*
  * Header for a 2PC state file
  */
-#define TWOPHASE_MAGIC	0x57F94534	/* format identifier */
+#define TWOPHASE_MAGIC	0x67F94534	/* format identifier */
 
 typedef xl_xact_prepare TwoPhaseFileHeader;
 
@@ -1021,10 +1039,17 @@ StartPrepare(GlobalTransaction gxact)
 	hdr.nabortrels = smgrGetPendingDeletes(false, &abortrels);
 	hdr.ninvalmsgs = xactGetCommittedInvalidationMessages(&invalmsgs,
 														  &hdr.initfileinval);
-	hdr.gidlen = strlen(gxact->gid) + 1;	/* Include '\0' */
+	hdr.gidlen = strlen(gxact->gid) + 1;		/* Include '\0' */
+	hdr.state_3pc_change = false; /* this is full-blown PREPARE */
+	if (strlen(gxact->state_3pc) > 0)
+		hdr.state_3pc_len = strlen(gxact->state_3pc) + 1; /* Include '\0' */
+	else
+		hdr.state_3pc_len = 0; /* don't save empty value at all */
 
 	save_state_data(&hdr, sizeof(TwoPhaseFileHeader));
 	save_state_data(gxact->gid, hdr.gidlen);
+	if (hdr.state_3pc_len > 0)
+		save_state_data(gxact->state_3pc, hdr.state_3pc_len);
 
 	/*
 	 * Add the additional info about subxacts, deletable files and cache
@@ -1453,6 +1478,7 @@ FinishPreparedTransaction(const char *gid, bool isCommit, bool missing_ok)
 	Assert(TransactionIdEquals(hdr->xid, xid));
 	bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
 	bufptr += MAXALIGN(hdr->gidlen);
+	bufptr += MAXALIGN(hdr->state_3pc_len);
 	children = (TransactionId *) bufptr;
 	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 	commitrels = (RelFileNode *) bufptr;
@@ -1636,6 +1662,18 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
 	COMP_CRC32C(statefile_crc, content, len);
 	FIN_CRC32C(statefile_crc);
 
+	/*
+	 * 3PC hacky support. Xid for xlog record is set during xlog insert
+	 * via GetCurrentTransactionIdIfAny() call. However this tx isn't already
+	 * active so allow it to be zero in xlog, but override here during recovery
+	 * so the file name will be valid xid.
+	 */
+	if (!TransactionIdIsValid(xid))
+	{
+		Assert(((TwoPhaseFileHeader *) content)->state_3pc_len > 0);
+		xid = ((TwoPhaseFileHeader *) content)->xid;
+	}
+
 	TwoPhaseFilePath(path, xid);
 
 	fd = OpenTransientFile(path,
@@ -1739,19 +1777,54 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 		 * also
 		 */
 		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
+		XLogRecPtr prepare_start_lsn;
 
+		/* access only once as it changes under us */
+		prepare_start_lsn = *((volatile XLogRecPtr *)&(gxact->prepare_start_lsn));
+
+		/*
+		 * 3pc patch complicates life here, as all LSN accesses are flaky
+		 * -- they can be changed at any time by
+		 * SetPreparedTransactionState. We still must move 3pc state change
+		 * records to file if upcoming WAL removal will cut them off -- just
+		 * as we do with PREPARE records. So, the idea is to fetch *some*
+		 * valid (fsynced) state of xact. We don't care if it changes the
+		 * next moment; corresponding wal definitely won't be removed this
+		 * time, delayChkpt handles that. Moreover, it is okayish if
+		 * prepare_end_lsn and prepare_start_lsn belong to different
+		 * 3PC state change records -- if redo_horizon doesn't exclude the
+		 * newer change, well, we don't need the move (or, if older
+		 * prepare_end_lsn forces the move but prepare_start_lsn points to
+		 * newer record, we'll do the move which is probably unnecessary but
+		 * harmless).
+		 *
+		 * We rely on well-aligned 64 bit fetch being atomic, yes.
+		 */
 		if ((gxact->valid || gxact->inredo) &&
-			!gxact->ondisk &&
-			gxact->prepare_end_lsn <= redo_horizon)
+			gxact->prepare_end_lsn != InvalidXLogRecPtr &&
+			gxact->prepare_end_lsn <= redo_horizon &&
+			(gxact->ondisk_start_lsn == InvalidXLogRecPtr ||
+			 gxact->ondisk_start_lsn < prepare_start_lsn))
 		{
 			char	   *buf;
 			int			len;
 
-			XlogReadTwoPhaseData(gxact->prepare_start_lsn, &buf, &len);
+			XlogReadTwoPhaseData(prepare_start_lsn, &buf, &len);
 			RecreateTwoPhaseFile(gxact->xid, buf, len);
 			gxact->ondisk = true;
-			gxact->prepare_start_lsn = InvalidXLogRecPtr;
-			gxact->prepare_end_lsn = InvalidXLogRecPtr;
+			/*
+			 * Vanilla zeroes prepare_*_lsn here; with 3pc patch we
+			 * shouldn't do that as SetPreparedTransactionState can at any
+			 * moment set new values there. However, we remember (in memory
+			 * only, after restart valid prepare_start_lsn surely points to
+			 * not recycled WAL) the version of xact we've moved to file to
+			 * avoid doing that again -- which would be at risk of accessing
+			 * removed wal.
+			 *
+			 * prepare_start_lsn is fetched only once to prevent thinking
+			 * we've moved the version we actually hadn't.
+			 */
+			gxact->ondisk_start_lsn = prepare_start_lsn;
 			pfree(buf);
 			serialized_xacts++;
 		}
@@ -2011,6 +2084,8 @@ RecoverPreparedTransactions(void)
 		bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
 		gid = (const char *) bufptr;
 		bufptr += MAXALIGN(hdr->gidlen);
+		/* skip over state_3pc, it must have been already set in redo */
+		bufptr += MAXALIGN(hdr->state_3pc_len);
 		subxids = (TransactionId *) bufptr;
 		bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 		bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
@@ -2162,7 +2237,8 @@ ProcessTwoPhaseBuffer(TransactionId xid,
 	 */
 	subxids = (TransactionId *) (buf +
 								 MAXALIGN(sizeof(TwoPhaseFileHeader)) +
-								 MAXALIGN(hdr->gidlen));
+								 MAXALIGN(hdr->gidlen) +
+								 MAXALIGN(hdr->state_3pc_len));
 	for (i = 0; i < hdr->nsubxacts; i++)
 	{
 		TransactionId subxid = subxids[i];
@@ -2336,6 +2412,34 @@ RecordTransactionAbortPrepared(TransactionId xid,
 	SyncRepWaitForLSN(recptr, false);
 }
 
+
+int
+GetPreparedTransactions(PreparedTransaction* pxacts)
+{
+	int			num;
+	int			i;
+
+	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
+
+	num = TwoPhaseState->numPrepXacts;
+	if (num == 0)
+	{
+		LWLockRelease(TwoPhaseStateLock);
+		*pxacts = NULL;
+		return 0;
+	}
+
+	*pxacts = (PreparedTransaction)palloc(sizeof(PreparedTransactionData) * num);
+	for (i = 0; i < num; i++) {
+		(*pxacts)[i].owner = TwoPhaseState->prepXacts[i]->owner;
+		strcpy((*pxacts)[i].gid, TwoPhaseState->prepXacts[i]->gid);
+		strcpy((*pxacts)[i].state_3pc, TwoPhaseState->prepXacts[i]->state_3pc);
+	}
+	LWLockRelease(TwoPhaseStateLock);
+
+	return num;
+}
+
 /*
  * PrepareRedoAdd
  *
@@ -2352,6 +2456,7 @@ PrepareRedoAdd(char *buf, XLogRecPtr start_lsn,
 	char	   *bufptr;
 	const char *gid;
 	GlobalTransaction gxact;
+	int				  i;
 
 	Assert(LWLockHeldByMeInMode(TwoPhaseStateLock, LW_EXCLUSIVE));
 	Assert(RecoveryInProgress());
@@ -2369,6 +2474,39 @@ PrepareRedoAdd(char *buf, XLogRecPtr start_lsn,
 	 * The gxact also gets marked with gxact->inredo set to true to indicate
 	 * that it got added in the redo phase
 	 */
+
+	/*
+	 * MTM-SPECIFIC.
+	 * In our case 3PC is done via logging prepare record twice with different state_3pc.
+	 * So try to find state with same xid and change the state. Other option is to use
+	 * twice bigger numPrepXacts, but then we anyway need iterate whole array upon
+	 * deletion to wipe all mentions of this tx.
+	 */
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		gxact = TwoPhaseState->prepXacts[i];
+		if (gxact->xid == hdr->xid)
+		{
+			Assert(gxact->inredo);
+
+			/*
+			 * update LSN position so that checkpointer will take to file
+			 * the latest version (including this state_3pc)
+			 */
+			gxact->prepare_start_lsn = start_lsn;
+			gxact->prepare_end_lsn = end_lsn;
+
+			if (hdr->state_3pc_len > 0)
+			{
+				bufptr += MAXALIGN(hdr->gidlen);
+				strncpy(gxact->state_3pc, bufptr, MAX_3PC_STATE_SIZE);
+			}
+			else
+				*gxact->state_3pc = '\0';
+
+			return;
+		}
+	}
 
 	/* Get a free gxact from the freelist */
 	if (TwoPhaseState->freeGXacts == NULL)
@@ -2388,8 +2526,17 @@ PrepareRedoAdd(char *buf, XLogRecPtr start_lsn,
 	gxact->locking_backend = InvalidBackendId;
 	gxact->valid = false;
 	gxact->ondisk = XLogRecPtrIsInvalid(start_lsn);
+	/* purely in-memory value, we don't know/need it after restart */
+	gxact->ondisk_start_lsn = InvalidXLogRecPtr;
 	gxact->inredo = true;		/* yes, added in redo */
 	strcpy(gxact->gid, gid);
+	if (hdr->state_3pc_len > 0)
+	{
+		bufptr += MAXALIGN(hdr->gidlen);
+		strncpy(gxact->state_3pc, bufptr, MAX_3PC_STATE_SIZE);
+	}
+	else
+		*gxact->state_3pc = '\0';
 
 	/* And insert it into the active array */
 	Assert(TwoPhaseState->numPrepXacts < max_prepared_xacts);
@@ -2449,4 +2596,124 @@ PrepareRedoRemove(TransactionId xid, bool giveWarning)
 	if (gxact->ondisk)
 		RemoveTwoPhaseFile(xid, giveWarning);
 	RemoveGXact(gxact);
+}
+
+/*
+ * pg_precommit_prepared
+ *
+ * Alter state of prepared transaction. This function can be used to implement
+ * 3PC at user level.
+ */
+Datum
+pg_precommit_prepared(PG_FUNCTION_ARGS)
+{
+	char const* gid = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	char const* state = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	SetPreparedTransactionState(gid, state, false);
+	PG_RETURN_VOID();
+}
+
+/*
+ * SetPrepareTransactionState
+ * Alter 3PC state of prepared transaction
+ */
+bool SetPreparedTransactionState(char const* gid, char const* state, bool missing_ok)
+{
+	GlobalTransaction gxact;
+	PGXACT	   *pgxact;
+	TwoPhaseFileHeader *old_hdr;
+	TwoPhaseFileHeader *hdr;
+	char* old_buf;
+	char* buf;
+	bool replorigin;
+	Size hdr_and_gid;
+	Size total_len;
+	XLogRecPtr prepare_end_lsn;
+
+	if (strlen(state) >= MAX_3PC_STATE_SIZE)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("transaction state \"%s\" is too long",
+						state)));
+
+	replorigin = (replorigin_session_origin != InvalidRepOriginId &&
+				  replorigin_session_origin != DoNotReplicateId);
+
+	gxact = LockGXact(gid, GetUserId(), missing_ok);
+	if (gxact == NULL)
+		return false;
+
+	pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
+	strcpy(gxact->state_3pc, state);
+
+	/*
+	 * XXX: there's a very small probability xact will be concurrently moved
+	 * to file and WAL recycled so we'd get ERROR here, should retry the file
+	 * in this case. Same for FinishPreparedTransaction.
+	 */
+	if (gxact->ondisk)
+		old_buf = ReadTwoPhaseFile(pgxact->xid, true);
+	else
+		XlogReadTwoPhaseData(gxact->prepare_start_lsn, &old_buf, NULL);
+	old_hdr = (TwoPhaseFileHeader *) old_buf;
+
+	/*
+	 * For simplicity, we log just the same PREPARE record with new state_3pc
+	 * pasted in, perform necessary surgery for that. TODO: we'd better log
+	 * only xid and state_3pc (the PREPARE itself could be quite large in
+	 * e.g. case of many DDL), but that would complicate interactions with
+	 * checkpointer.
+	 */
+	total_len = old_hdr->total_len - MAXALIGN(old_hdr->state_3pc_len) +
+		MAXALIGN(strlen(state) + 1);
+	buf = palloc0(total_len); /* NB: includes sizeof(crc) which we don't need */
+	/* state_3pc goes after header and gid, but before the rest of data */
+	hdr_and_gid = MAXALIGN(sizeof(TwoPhaseFileHeader)) + MAXALIGN(old_hdr->gidlen);
+	memcpy(buf, old_buf, hdr_and_gid);
+	hdr = (TwoPhaseFileHeader *) buf;
+	hdr->total_len = total_len;
+	hdr->state_3pc_change = true; /* this is not PREPARE, just state_3pc */
+	hdr->state_3pc_len = strlen(state) + 1; /* Include '\0' */
+	buf += hdr_and_gid;
+	memcpy(buf, state, hdr->state_3pc_len);
+	buf += MAXALIGN(hdr->state_3pc_len);
+	old_buf += hdr_and_gid + MAXALIGN(old_hdr->state_3pc_len);
+	memcpy(buf, old_buf, old_hdr->total_len - MAXALIGN(sizeof(TwoPhaseFileHeader)) -
+		   MAXALIGN(old_hdr->gidlen) - MAXALIGN(old_hdr->state_3pc_len) -
+		   sizeof(pg_crc32c));
+
+	/* also update in memory */
+	strncpy(gxact->state_3pc, state, MAX_3PC_STATE_SIZE);
+
+	START_CRIT_SECTION();
+	MyProc->delayChkpt = true;
+
+	hdr->origin_lsn = replorigin_session_origin_lsn;
+	hdr->origin_timestamp = replorigin_session_origin_timestamp;
+
+	XLogBeginInsert();
+	XLogRegisterData((char *) hdr, hdr->total_len - sizeof(pg_crc32c));
+	XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
+
+	prepare_end_lsn = XLogInsert(RM_XACT_ID, XLOG_XACT_PREPARE);
+
+	if (replorigin)
+		/* Move LSNs forward for this replication origin */
+		replorigin_session_advance(replorigin_session_origin_lsn,
+								   gxact->prepare_end_lsn);
+
+	XLogFlush(prepare_end_lsn);
+
+	/*
+	 * Allow CheckPointTwoPhase to see LSNs only after we've reliably done the
+	 * job, i.e. fsynced WAL (XLogFlush should be barrier here).
+	 */
+	gxact->prepare_start_lsn = ProcLastRecPtr;
+	gxact->prepare_end_lsn = prepare_end_lsn;
+	MyProc->delayChkpt = false;
+
+	END_CRIT_SECTION();
+
+	PostPrepare_Twophase();
+	return true;
 }

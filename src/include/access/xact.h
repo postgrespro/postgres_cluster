@@ -31,6 +31,11 @@
 #define GIDSIZE 200
 
 /*
+ * Maximal size of 3PC transaction state (including '\0')
+ */
+#define MAX_3PC_STATE_SIZE 64
+
+/*
  * Xact isolation levels
  */
 #define XACT_READ_UNCOMMITTED	0
@@ -311,6 +316,12 @@ typedef struct xl_xact_prepare
 	uint16		gidlen;			/* length of the GID - GID follows the header */
 	XLogRecPtr	origin_lsn;		/* lsn of this record at origin node */
 	TimestampTz origin_timestamp;	/* time of prepare at origin node */
+	bool		state_3pc_change; /* is it just state_3pc change or actual
+								   * PREPARE? We could stuck it into one
+								   * bit of state_3pc_len, but let's not be
+								   * greedy.
+								   */
+	uint8		state_3pc_len;	/* state_3pc follows GID, if not 0. '\0' included. */
 } xl_xact_prepare;
 
 /*
@@ -339,6 +350,9 @@ typedef struct xl_xact_parsed_commit
 	char		twophase_gid[GIDSIZE];	/* only for 2PC */
 	int			nabortrels;		/* only for 2PC */
 	RelFileNode *abortnodes;	/* only for 2PC */
+	/* MM-support */
+	bool		state_3pc_change; /* only for 3PC */
+	char		state_3pc[MAX_3PC_STATE_SIZE];	/* only for 3PC */
 
 	XLogRecPtr	origin_lsn;
 	TimestampTz origin_timestamp;
@@ -405,6 +419,7 @@ extern void BeginTransactionBlock(void);
 extern bool EndTransactionBlock(bool chain);
 extern bool PrepareTransactionBlock(const char *gid);
 extern void UserAbortTransactionBlock(bool chain);
+extern bool PrepareTransactionBlockWithState3PC(const char *gid, const char *state_3pc);
 extern void BeginImplicitTransactionBlock(void);
 extern void EndImplicitTransactionBlock(void);
 extern void ReleaseSavepoint(const char *name);

@@ -230,9 +230,18 @@ ParsePrepareRecord(uint8 info, xl_xact_prepare *xlrec, xl_xact_parsed_prepare *p
 	parsed->nrels = xlrec->ncommitrels;
 	parsed->nabortrels = xlrec->nabortrels;
 	parsed->nmsgs = xlrec->ninvalmsgs;
+	parsed->state_3pc_change = xlrec->state_3pc_change;
 
 	strncpy(parsed->twophase_gid, bufptr, xlrec->gidlen);
 	bufptr += MAXALIGN(xlrec->gidlen);
+
+	if (xlrec->state_3pc_len > 0)
+	{
+		strncpy(parsed->state_3pc, bufptr, xlrec->state_3pc_len);
+		bufptr += MAXALIGN(xlrec->state_3pc_len);
+	}
+	else
+		*parsed->state_3pc = '\0';
 
 	parsed->subxacts = (TransactionId *) bufptr;
 	bufptr += MAXALIGN(xlrec->nsubxacts * sizeof(TransactionId));
