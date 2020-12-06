@@ -2735,7 +2735,8 @@ l1:
 
 		if (old_key_tuple != NULL)
 		{
-			if (relation->rd_rel->relreplident == REPLICA_IDENTITY_FULL)
+			if (relation->rd_rel->relreplident == REPLICA_IDENTITY_FULL
+				|| !OidIsValid(relation->rd_replidindex))
 				xlrec.flags |= XLH_DELETE_CONTAINS_OLD_TUPLE;
 			else
 				xlrec.flags |= XLH_DELETE_CONTAINS_OLD_KEY;
@@ -7393,7 +7394,8 @@ log_heap_update(Relation reln, Buffer oldbuf,
 		xlrec.flags |= XLH_UPDATE_CONTAINS_NEW_TUPLE;
 		if (old_key_tuple)
 		{
-			if (reln->rd_rel->relreplident == REPLICA_IDENTITY_FULL)
+			if (reln->rd_rel->relreplident == REPLICA_IDENTITY_FULL
+				|| !OidIsValid(reln->rd_replidindex))
 				xlrec.flags |= XLH_UPDATE_CONTAINS_OLD_TUPLE;
 			else
 				xlrec.flags |= XLH_UPDATE_CONTAINS_OLD_KEY;
@@ -7620,7 +7622,10 @@ ExtractReplicaIdentity(Relation relation, HeapTuple tp, bool key_changed,
 	if (replident == REPLICA_IDENTITY_NOTHING)
 		return NULL;
 
-	if (replident == REPLICA_IDENTITY_FULL)
+	if (!relation->rd_indexvalid)
+		RelationGetIndexList(relation);
+
+	if (replident == REPLICA_IDENTITY_FULL || !OidIsValid(relation->rd_replidindex))
 	{
 		/*
 		 * When logging the entire old tuple, it very well could contain

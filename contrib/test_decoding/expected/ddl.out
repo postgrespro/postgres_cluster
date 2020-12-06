@@ -592,16 +592,16 @@ SELECT data FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL, 'inc
  table public.table_without_key: INSERT: id[integer]:2 data[integer]:2
  COMMIT
  BEGIN
- table public.table_without_key: DELETE: (no-tuple-data)
+ table public.table_without_key: DELETE: id[integer]:1 data[integer]:1
  COMMIT
  BEGIN
- table public.table_without_key: UPDATE: id[integer]:2 data[integer]:3
+ table public.table_without_key: UPDATE: old-key: id[integer]:2 data[integer]:2 new-tuple: id[integer]:2 data[integer]:3
  COMMIT
  BEGIN
- table public.table_without_key: UPDATE: id[integer]:-2 data[integer]:3
+ table public.table_without_key: UPDATE: old-key: id[integer]:2 data[integer]:3 new-tuple: id[integer]:-2 data[integer]:3
  COMMIT
  BEGIN
- table public.table_without_key: UPDATE: id[integer]:2 data[integer]:3
+ table public.table_without_key: UPDATE: old-key: id[integer]:-2 data[integer]:3 new-tuple: id[integer]:2 data[integer]:3
  COMMIT
  BEGIN
  table public.table_without_key: UPDATE: old-key: id[integer]:2 data[integer]:3 new-tuple: id[integer]:-2 data[integer]:3
@@ -648,19 +648,19 @@ SELECT data FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL, 'inc
  table public.table_with_unique_not_null: INSERT: id[integer]:2 data[integer]:2
  COMMIT
  BEGIN
- table public.table_with_unique_not_null: DELETE: (no-tuple-data)
+ table public.table_with_unique_not_null: DELETE: id[integer]:1 data[integer]:1
  COMMIT
  BEGIN
- table public.table_with_unique_not_null: UPDATE: id[integer]:2 data[integer]:3
+ table public.table_with_unique_not_null: UPDATE: old-key: id[integer]:2 data[integer]:2 new-tuple: id[integer]:2 data[integer]:3
  COMMIT
  BEGIN
- table public.table_with_unique_not_null: UPDATE: id[integer]:-2 data[integer]:3
+ table public.table_with_unique_not_null: UPDATE: old-key: id[integer]:2 data[integer]:3 new-tuple: id[integer]:-2 data[integer]:3
  COMMIT
  BEGIN
- table public.table_with_unique_not_null: UPDATE: id[integer]:2 data[integer]:3
+ table public.table_with_unique_not_null: UPDATE: old-key: id[integer]:-2 data[integer]:3 new-tuple: id[integer]:2 data[integer]:3
  COMMIT
  BEGIN
- table public.table_with_unique_not_null: DELETE: (no-tuple-data)
+ table public.table_with_unique_not_null: DELETE: id[integer]:2 data[integer]:3
  COMMIT
  BEGIN
  table public.table_with_unique_not_null: INSERT: id[integer]:3 data[integer]:1
