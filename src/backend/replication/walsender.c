@@ -1835,7 +1835,7 @@ ProcessStandbyMessage(void)
 /*
  * Remember that a walreceiver just confirmed receipt of lsn `lsn`.
  */
-static void
+void
 PhysicalConfirmReceivedLocation(XLogRecPtr lsn)
 {
 	bool		changed = false;

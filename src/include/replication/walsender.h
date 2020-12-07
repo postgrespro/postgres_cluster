@@ -47,6 +47,7 @@ extern void WalSndInitStopping(void);
 extern void WalSndWaitStopping(void);
 extern void HandleWalSndInitStopping(void);
 extern void WalSndRqstFileReload(void);
+extern void PhysicalConfirmReceivedLocation(XLogRecPtr lsn);
 
 /*
  * Remember that we want to wakeup walsenders later
