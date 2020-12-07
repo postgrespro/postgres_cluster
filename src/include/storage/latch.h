@@ -143,6 +143,7 @@ typedef struct WaitEvent
 	int			pos;			/* position in the event data structure */
 	uint32		events;			/* triggered events */
 	pgsocket	fd;				/* socket fd associated with event */
+	int         index;          /* position of correspondent element in descriptors array (for poll() and win32 implementation */
 	void	   *user_data;		/* pointer provided in AddWaitEventToSet */
 #ifdef WIN32
 	bool		reset;			/* Is reset of the event required? */
@@ -176,6 +177,7 @@ extern int	WaitLatch(Latch *latch, int wakeEvents, long timeout,
 					  uint32 wait_event_info);
 extern int	WaitLatchOrSocket(Latch *latch, int wakeEvents,
 							  pgsocket sock, long timeout, uint32 wait_event_info);
+extern void DeleteWaitEvent(WaitEventSet *set, int pos);
 
 /*
  * Unix implementation uses SIGUSR1 for inter-process signaling.
