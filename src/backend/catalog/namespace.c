@@ -3225,6 +3225,27 @@ isOtherTempNamespace(Oid namespaceId)
 }
 
 /*
+ * MTM-CRUTCH for temp table.
+ *
+ * From avtovacuum point of view temp schemas in multimaster
+ * receivers are not used. Setting proc->tempNamespaceId would not be enough
+ * since 'mtm_temp_' schemas can be moved between pool workers.
+ *
+ * XXX: add cleanup for crashed backends.
+ */
+bool
+isMtmTemp(Oid namespaceId)
+{
+	char	   *nspname;
+
+	nspname = get_namespace_name(namespaceId);
+	if (!nspname)
+		return false;
+
+	return strncmp(nspname, "mtm_tmp_", 8) == 0;
+}
+
+/*
  * checkTempNamespaceStatus - is the given namespace owned and actively used
  * by a backend?
  *
@@ -3240,6 +3261,9 @@ checkTempNamespaceStatus(Oid namespaceId)
 	int			backendId;
 
 	Assert(OidIsValid(MyDatabaseId));
+
+	if (isMtmTemp(namespaceId))
+		return TEMP_NAMESPACE_IN_USE;
 
 	backendId = GetTempNamespaceBackendId(namespaceId);
 
@@ -3328,9 +3352,13 @@ GetTempNamespaceState(Oid *tempNamespaceId, Oid *tempToastNamespaceId)
 void
 SetTempNamespaceState(Oid tempNamespaceId, Oid tempToastNamespaceId)
 {
-	/* Worker should not have created its own namespaces ... */
-	Assert(myTempNamespace == InvalidOid);
-	Assert(myTempToastNamespace == InvalidOid);
+	/*
+	 * However in case of multimaster or pooler that is legit.
+	 * MTM-CRUTCH.
+	 *
+	 * Assert(myTempNamespace == InvalidOid);
+	 * Assert(myTempToastNamespace == InvalidOid);
+	 */
 	Assert(myTempNamespaceSubID == InvalidSubTransactionId);
 
 	/* Assign same namespace OIDs that leader has */

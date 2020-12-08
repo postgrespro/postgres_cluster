@@ -28,6 +28,7 @@
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_statistic_ext.h"
@@ -207,6 +208,16 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			 * indisready.
 			 */
 			if (!index->indisvalid)
+			{
+				index_close(indexRelation, NoLock);
+				continue;
+			}
+
+			/*
+			 * MTM-CRUTCH: Ignore empty index for multimaster temp table on
+			 * receiver.
+			 */
+			if (isMtmTemp(RelationGetNamespace(indexRelation)))
 			{
 				index_close(indexRelation, NoLock);
 				continue;

@@ -118,6 +118,9 @@ TransactionId *ParallelCurrentXids;
  */
 int			MyXactFlags;
 
+/* MTM-CRUTCH: allow to prepare transactions with temp objects */
+bool		AllowTempIn2PC;
+
 /*
  *	transaction states - transaction state from server perspective
  */
@@ -2390,7 +2393,14 @@ PrepareTransaction(void)
 	 * cases, such as a temp table created and dropped all within the
 	 * transaction.  That seems to require much more bookkeeping though.
 	 */
-	if ((MyXactFlags & XACT_FLAGS_ACCESSEDTEMPNAMESPACE))
+
+	/*
+	 * MTM-CRUTCH: allow to proceed if requested via AllowTempIn2PC.
+	 * Note that for now we just ignore the problems stated above, there is
+	 * no special handling for that. Backend who can't exit until xact is
+	 * resolved is ok in mm: we can't do much while it hangs around anyway.
+	 */
+	if (!AllowTempIn2PC && (MyXactFlags & XACT_FLAGS_ACCESSEDTEMPNAMESPACE))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot PREPARE a transaction that has operated on temporary objects")));

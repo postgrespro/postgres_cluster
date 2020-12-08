@@ -95,6 +95,7 @@ extern int	synchronous_commit;
  * recording flags.
  */
 extern int	MyXactFlags;
+extern PGDLLIMPORT bool	AllowTempIn2PC;
 
 /*
  * XACT_FLAGS_ACCESSEDTEMPNAMESPACE - set when a temporary object is accessed.
