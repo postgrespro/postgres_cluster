@@ -18,6 +18,7 @@
 #include "access/relscan.h"
 #include "access/tableam.h"
 #include "access/transam.h"
+#include "access/detoast.h"
 #include "access/xact.h"
 #include "commands/trigger.h"
 #include "executor/executor.h"
@@ -263,11 +264,33 @@ tuples_equal(TupleTableSlot *slot1, TupleTableSlot *slot2,
 		{
 			typentry = lookup_type_cache(att->atttypid,
 										 TYPECACHE_EQ_OPR_FINFO);
+			/*
+			 * MTM-CRUTCH: vanilla bails out here if equality op can't be found,
+			 * i.e. type doesn't have btree nor hash opclasses, which means you
+			 * can't have e.g. box type as part of replica identity. That's
+			 * unfortunate for mtm as some regression tests (index_including_gist
+			 * for instance) do update/delete on geometric types without unique
+			 * index (full replica identity).
+			 *
+			 * Binary comparison done here is also dubious as generally equal
+			 * values might not be binary equal, but sane replication identities
+			 * should have btree opclass anyway. One more alternative would be to
+			 * try to search for 'same' strategy of R-tree gist, but it is
+			 * unreliable as gist strategies are not fixed...
+			 */
 			if (!OidIsValid(typentry->eq_opr_finfo.fn_oid))
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_FUNCTION),
-						 errmsg("could not identify an equality operator for type %s",
-								format_type_be(att->atttypid))));
+			{
+				if (att->attlen == -1)
+				{
+					struct varlena *vl1 = (struct varlena *) DatumGetPointer(slot1->tts_values[attrnum]);
+					struct varlena *vl2 = (struct varlena *) DatumGetPointer(slot2->tts_values[attrnum]);
+					return datumIsEqual(PointerGetDatum(detoast_attr(vl1)),
+										PointerGetDatum(detoast_attr(vl2)),
+										att->attbyval, -1);
+				}
+				return datumIsEqual(slot1->tts_values[attrnum], slot2->tts_values[attrnum],
+									att->attbyval, att->attlen);
+			}
 			eq[attrnum] = typentry;
 		}
 
