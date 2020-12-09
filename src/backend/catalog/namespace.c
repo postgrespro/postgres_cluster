@@ -3326,6 +3326,28 @@ GetTempToastNamespace(void)
 	return myTempToastNamespace;
 }
 
+/*
+ * MTM-CRUTCH.
+ *
+ * The BackendId to use for our session's temp relations is normally our own,
+ * but parallel workers should use their leader's ID.
+ * In a multimaster configuration it is a session id from the node, which
+ * connected to the user.
+ */
+int
+BackendIdForTempRelations(void)
+{
+	Oid nspOid, tnspOid;
+
+	GetTempNamespaceState(&nspOid, &tnspOid);
+
+	if (OidIsValid(nspOid))
+		return GetTempNamespaceBackendId(nspOid);
+	else if(OidIsValid(tnspOid))
+		return GetTempNamespaceBackendId(tnspOid);
+	else
+		return ParallelMasterBackendId == InvalidBackendId ? MyBackendId : ParallelMasterBackendId;
+}
 
 /*
  * GetTempNamespaceState - fetch status of session's temporary namespace
