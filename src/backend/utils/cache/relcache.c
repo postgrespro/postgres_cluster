@@ -4521,6 +4521,7 @@ RelationGetIndexList(Relation relation)
 	char		replident = relation->rd_rel->relreplident;
 	Oid			pkeyIndex = InvalidOid;
 	Oid			candidateIndex = InvalidOid;
+	Oid			uniqueIndex = InvalidOid;
 	MemoryContext oldcxt;
 
 	/* Quick exit if we already computed the list. */
@@ -4578,6 +4579,36 @@ RelationGetIndexList(Relation relation)
 		/* remember explicitly chosen replica index */
 		if (index->indisreplident)
 			candidateIndex = index->indexrelid;
+
+		/*
+		 * If there is no primary key and explicitly specified replica identity index,
+		 * then try to use any unique index with not-null keys as replica identity index.
+		 */
+		if (!OidIsValid(candidateIndex) &&
+			!OidIsValid(pkeyIndex) &&
+			!OidIsValid(uniqueIndex) &&
+			heap_attisnull(htup, Anum_pg_index_indexprs, NULL))
+		{
+			int i;
+			for (i = 0; i < index->indnatts; i++)
+			{
+				int	attno = index->indkey.values[i];
+				if (attno > 0)
+				{
+					Form_pg_attribute attr = TupleDescAttr(relation->rd_att, attno - 1);
+					if (!attr->attnotnull)
+						break;
+				}
+				else
+					/*
+					 * Disallow index on system column to be a replica identity.
+					 * Their values may differ on different instances.
+					 */
+					break;
+			}
+			if (i == index->indnatts)
+				uniqueIndex = index->indexrelid;
+		}
 	}
 
 	systable_endscan(indscan);
@@ -4596,6 +4627,8 @@ RelationGetIndexList(Relation relation)
 		relation->rd_replidindex = pkeyIndex;
 	else if (replident == REPLICA_IDENTITY_INDEX && OidIsValid(candidateIndex))
 		relation->rd_replidindex = candidateIndex;
+	else if (replident == REPLICA_IDENTITY_DEFAULT && OidIsValid(uniqueIndex))
+		relation->rd_replidindex = uniqueIndex;
 	else
 		relation->rd_replidindex = InvalidOid;
 	relation->rd_indexvalid = true;
