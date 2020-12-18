@@ -1095,7 +1095,13 @@ replorigin_session_setup(RepOriginId node)
 		if (curstate->roident != node)
 			continue;
 
-		else if (curstate->acquired_by != 0)
+		/*
+		 * MTM-CRUTCH.
+		 *
+		 * Allow multiple backends (mm parallel workers) to setup same
+		 * replication session.
+		 */
+		else if (curstate->acquired_by != 0 && DetectGlobalDeadLock == NULL)
 		{
 			ereport(ERROR,
 					(errcode(ERRCODE_OBJECT_IN_USE),
