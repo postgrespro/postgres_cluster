@@ -13,6 +13,7 @@
 #define _WALSENDER_H
 
 #include <signal.h>
+#include <access/xlogdefs.h>
 
 /*
  * What to do with a snapshot in create replication slot command.

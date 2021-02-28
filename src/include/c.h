@@ -531,6 +531,9 @@ typedef uint32 SubTransactionId;
 #define InvalidSubTransactionId		((SubTransactionId) 0)
 #define TopSubTransactionId			((SubTransactionId) 1)
 
+/* stub for making core patches more compatible with pgproee */
+#define XID_FMT "%u"
+
 /* MultiXactId must be equivalent to TransactionId, to fit in t_xmax */
 typedef TransactionId MultiXactId;
 

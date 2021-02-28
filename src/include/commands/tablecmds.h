@@ -23,6 +23,7 @@
 
 struct AlterTableUtilityContext;	/* avoid including tcop/utility.h here */
 
+extern PGDLLIMPORT List* on_commits;
 
 extern ObjectAddress DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 									ObjectAddress *typaddress, const char *queryString);
